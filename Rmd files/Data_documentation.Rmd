@@ -1,0 +1,294 @@
+---
+title: "Data documentation"
+author: "Leyla Nunez"
+date: "1 april 2019"
+output:
+  html_document:
+    theme: united
+    highlight: tango
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+---
+
+## Background
+
+According to OP-507.01 - Study statistician has to add data specifications to the data documentation file (refer to TEMP-OP-507-A01 Data documentation). Data specifications are used to describe the contents of the data received form register holder including but not limited to: 
+
+  - Name of data holder/source
+  - Path to the raw data file in the server
+  - Variable names in the data
+  - Variable definitions
+  - Definition of categories for factor variables
+  - Coding system used (e.g. ICD-10, ICD-O-3, ATC, READ)
+Variable structure (e.g. character, integer, date)
+
+## Objective 
+
+To avoit manual imputation to find an authomatic extraction of the information.
+
+## Output
+
+**Suggestion 1:** A **.txt** file will be saved. The layout used is the excel template **TEMP-OP-507-A01.01 Data documentation**. Why **.txt**? The file that needs to be exported is a list and I had some issues with succeeding to do so into **.xlsx**. 
+
+**Suggestion 2:** An **.xlsx** file will be saved. The layout is changed, see the excel file. 
+
+**Suggestion 3:** An **.html** file. The idea is that instead of creating excel sheets we could save the information required by the **OP-507.01** as a **html** file, alternatively as an **.pdf** file. The file can be copied to the project *../ER-xxx_Name_of_the_Study_DONOTTOUCH/Management/* folder in the Google drive. In addition, instead of having "Path to the raw" in the table, which makes the table long. I added that as a footnote to the table instead. I also suggest to remove the "comment". 
+Now, I do thin that the information in the table should be limited. When we do data checks, we create an .R for each rawdata file. Those files could instead become RMarkdows. BUT I don't think this "data documentation" file should be as detailed as the individial data checks files. This one is just a "short" summary of the rawdata files delivered to us.
+
+
+## Code
+
+### Loading packages 
+```{r load_packages, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+library(here)
+library(tidyverse)
+library(data.table)
+library(knitr)
+library(kableExtra)
+```
+
+### Adding some parameters
+```{r parameters}
+
+# The name of the rawdata folder. The default should be: 
+# rawdata_folder_name <- "rawdata"
+# I have 3 different test folders here
+rawdata_folder_name <- "rawdata_test1"
+
+# The exported txt/excel files will be saved here:
+output_save_files <- here("report", "output", "data_check")
+
+# the suggested column names for the output table
+colnames <- c("Data holder/source", "Path to the raw data", "File",
+              "Number of variables", "Number of observations",
+              "Variable name", "Definition","Type", 
+              "minimum", "maximum", "missing", "categories", "comments")
+
+```
+
+
+### Loading data
+
+```{r loading_data}
+
+# HERE: A list of all identified csv/txt files
+
+# the absolute path
+list_of_files_absPath <- list.files(path = here(rawdata_folder_name),
+                            recursive = TRUE,
+                            pattern = "\\.csv$|\\.txt$", 
+                            full.names = TRUE) 
+
+# the relative path
+list_of_files_relPath <- list.files(path = here(rawdata_folder_name), 
+                            recursive = TRUE,
+                            pattern = "\\.csv$|\\.txt$", 
+                            full.names = FALSE
+                            ) 
+# the relative path can also be extracted using:
+# url_relative from xml2 package
+library(xml2)
+list_of_files_relPath <- url_relative(list_of_files_absPath, here(rawdata_folder_name, "."))
+
+# Loading all the files and put them together into a LIST 
+datalist <- lapply(list_of_files_absPath, function(x) fread(x,
+                                                    header = TRUE,
+                                                    stringsAsFactors = FALSE))
+
+
+```
+
+#### As a side point
+In the code above I used **FRED** function to import *.csv*/*.txt* files. Additional extensions can of course be added, like Excel/SAS/SPSS/STATA/Rdata. For those extensions, other function for importing the files will be needed. In order to do so following steps can be created 
+
+
+```{r as_a_side_point}
+
+### 1:list ALL files 
+all_files <- list.files(here(rawdata_folder_name), recursive = TRUE)
+
+### 2: There are at least 2 ways to look for all the extrensions 
+library(pathological)
+unique(get_extension(list_of_files_relPath))
+library(tools)
+unique(file_ext(list_of_files_relPath))
+
+### 3: Create a funtion that imports the files depending on the files extension
+
+```
+
+### Additional needed information
+
+As I have seen, the rawdata files are usually located in subfolders to the **../rawdata**. In addition, the folder names are data holder/source names. In the code below, the data holder/source names will be extracted from the folder names. Now, if there are no subfolders the holder/source names in the outputs will be blank cells. 
+
+```{r additional_info}
+# Some additional information that will be used later on
+
+### Name of data holder or source
+dataHolder_source <- dirname(list_of_files_relPath) 
+# If there is no subfolders in the ../rawdata/ folder the output will be "."
+# > dataHolder_source
+# [1] "." "." "." "." "." "."
+
+# Names of each rawdata file - without the paths
+name_rawdata <- basename(list_of_files_relPath) 
+# The relative path to each of the rawdata files
+path_rawdata <- here(rawdata_folder_name, dataHolder_source) # the relative path to the rawdata files
+
+# beauty adjustment
+dataHolder_source <- gsub("\\.", "Not specified", dataHolder_source)
+
+```
+
+
+
+### Suggestion 1
+
+```{r data_extraction_v1, include=TRUE, echo=TRUE, warning=FALSE}
+
+list_of_all_files <- NULL
+
+for (i in seq_along(datalist)) { 
+
+  # one df at the time  
+  temp <- datalist[[i]]
+
+  # extracting relevant information - more info can be added
+  vari_type <- sapply(temp, class)
+  vari_name <- names(temp)
+  vari_def <- names(temp) #temporarily solution 
+  
+  vari_min <- sapply(temp, function(x) ifelse(is.numeric(x), min(x, na.rm = TRUE), NA))
+  vari_max <- sapply(temp, function(x) ifelse(is.numeric(x), max(x, na.rm = TRUE), NA))
+  vari_missing <- sapply(temp, function(x) sum(is.na(x)))
+  vari_nrofcat <- sapply(temp, function(x) ifelse(is.character(x), length(unique(x)), NA))
+  
+  sanitary_check <- ifelse(is.na(vari_nrofcat), 
+                           paste0("minimum: ", vari_min,
+                                  "; maximum: ", vari_max,
+                                  "; missing: ", vari_missing),
+                           paste0("categories: ", vari_nrofcat,
+                                  "; missing: ", vari_missing)
+                           )
+   
+    file_info <- cbind(vari_name, 
+             vari_def,
+             vari_type,
+             sanitary_check,
+             comments = rep("", ncol(temp))
+             )
+    
+    file_header <- rbind(c("", ""),
+                        c(dataHolder_source[i], ""),
+                        c(name_rawdata[i], path_rawdata[i]),
+                        c(paste0("Number of variables: ", dim(temp)[2]), 
+                          paste0("Number of observations: ", dim(temp)[1])),
+                        c("", ""))
+
+    list_of_all_files <- append(list_of_all_files,
+                                list(file_header, file_info))
+
+} 
+
+# exporting to txt
+lapply(list_of_all_files, function(x) write.table(data.frame(x),
+                                                  file.path(output_save_files, "output_version1.txt"),
+                                                  append = T, 
+                                                  sep = '\t' , 
+                                                  row.names = FALSE,
+                                                  col.names = TRUE)
+       )
+
+```
+
+
+
+### Suggestion 2
+
+```{r data_extraction_v2, warning=FALSE}
+
+list_of_all_files <- NULL
+
+
+for (i in seq_along(datalist)) { 
+
+  
+    temp <- datalist[[i]]
+  
+  vari_type <- sapply(temp, class)
+  vari_name <- names(temp)
+  vari_def <- names(temp) #temporarily solution 
+  
+  minimum <- sapply(temp, function(x) ifelse(is.numeric(x), min(x, na.rm = TRUE), NA))
+  maximum <- sapply(temp, function(x) ifelse(is.numeric(x), max(x, na.rm = TRUE), NA))
+  missing <- sapply(temp, function(x) sum(is.na(x)))
+  categories <- sapply(temp, function(x) ifelse(is.character(x), length(unique(x)), NA))
+
+    file_info <- cbind(
+             dataHolder_source = c(dataHolder_source[i], rep("", ncol(temp) - 1)),
+             path_rawdata = c(path_rawdata[i], rep("", ncol(temp) - 1)),
+             name_rawdata = c(name_rawdata[i], rep("", ncol(temp) - 1)),
+             nr_rows = c(dim(temp)[1], rep("", ncol(temp) - 1)),
+             nr_cols = c(dim(temp)[2], rep("", ncol(temp) - 1)),
+             vari_name, 
+             vari_def,
+             vari_type,
+             minimum,
+             maximum,
+             missing,
+             categories,
+             comments = rep("", ncol(temp))
+             )
+    
+    list_of_all_files <- rbind(list_of_all_files, file_info)
+
+
+} 
+
+# Saving the file ...
+write.table(list_of_all_files, 
+            file.path(output_save_files, "output_version2.txt"),
+            append = T, 
+            sep = '\t' , 
+            row.names = FALSE,
+            col.names = colnames, 
+            na = "")
+
+```
+
+### Suggestion 3
+
+```{r creating table}
+options(knitr.kable.NA = '') #Missing values (NA) in the table are displayed as NA by default. If you want to display them with other characters, you can set the option knitr.kable.NA, e.g. options(knitr.kable.NA = '') to hide NA values.
+
+# removing "Path to the raw data" and "comments"" columns
+list_of_all_files <- list_of_all_files[, -c(2, ncol(list_of_all_files))]
+# adding column names
+colnames(list_of_all_files) <- colnames[-c(2, length(colnames))]
+# Adding an asterix to "Data holder/source" header
+colnames(list_of_all_files)[1] <- paste0(colnames(list_of_all_files)[1],  
+                                         footnote_marker_symbol(1))
+
+list_of_all_files %>% 
+  kable(row.names = FALSE,
+        escape = F) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), 
+                full_width = F, 
+                position = "left",
+              font_size = 10
+              ) %>%
+  #column_spec(2, width = "5cm",  bold = TRUE) %>% # was trying to contoll the width of "Path to the raw data" column. Now the column is removed and the paths are added as footnote to the table
+  #collapse_rows(columns = 1:4, valign = "top") %>% # collapsing #Data holder/source" and "File" columns
+  #scroll_box(width = "100%", height = "300px") %>% # does not work nicely with footnote
+  footnote(general = "The path(s) to the raw data files.", 
+           general_title = "General: ",
+           number = paste0(unique(dataHolder_source), ": ", unique(path_rawdata)),
+           footnote_as_chunk = F)
+
+```
+
+
+ 

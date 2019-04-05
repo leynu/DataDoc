@@ -1,0 +1,170 @@
+---
+title: "Data documentation"
+subtitle: 'R-xxx_Name_of_the_Study_DONOTTOUCH'
+author: "Leyla Nunez"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: sandstone
+    highlight: tango
+    includes:
+      after_body: footer.html
+---
+
+
+This is **rawdata documentation** for **R-xxx_Name_of_the_Study_DONOTTOUCH** project accoring to **OP-507.01**.
+
+
+```{r load_packages, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+
+library(here)
+library(tidyverse)
+library(data.table)
+library(knitr)
+library(kableExtra)
+
+```
+
+```{r parameters, include=FALSE}
+
+# The name of the rawdata folder. The default should be: 
+# rawdata_folder_name <- "rawdata"
+# I have 3 different test folders here
+rawdata_folder_name <- "rawdata_test3"
+
+# The exported txt/excel files will be saved here:
+output_save_files <- here("report", "output", "data_check")
+
+# the suggested column names for the output table
+colnames <- c("Data holder/source", "Path to the raw data", "File",
+              "Number of variables", "Number of observations",
+              "Variable name", "Definition","Type", 
+              "minimum", "maximum", "missing", "categories", "comments")
+
+```
+
+
+
+```{r loading_data, include=FALSE}
+
+# HERE: A list of all identified csv/txt files
+
+# the absolute path
+list_of_files_absPath <- list.files(path = here(rawdata_folder_name),
+                            recursive = TRUE,
+                            pattern = "\\.csv$|\\.txt$", 
+                            full.names = TRUE) 
+
+# the relative path
+list_of_files_relPath <- list.files(path = here(rawdata_folder_name), 
+                            recursive = TRUE,
+                            pattern = "\\.csv$|\\.txt$", 
+                            full.names = FALSE
+                            ) 
+# the relative path can also be extracted using:
+# url_relative from xml2 package
+library(xml2)
+list_of_files_relPath <- url_relative(list_of_files_absPath, here(rawdata_folder_name, "."))
+
+# Loading all the files and put them together into a LIST 
+datalist <- lapply(list_of_files_absPath, function(x) fread(x,
+                                                    header = TRUE,
+                                                    stringsAsFactors = FALSE))
+
+```
+
+
+```{r additional_info, include=FALSE}
+# Some additional information that will be used later on
+
+### Name of data holder or source
+dataHolder_source <- dirname(list_of_files_relPath) 
+# If there is no subfolders in the ../rawdata/ folder the output will be "."
+# > dataHolder_source
+# [1] "." "." "." "." "." "."
+
+# Names of each rawdata file - without the paths
+name_rawdata <- basename(list_of_files_relPath) 
+# The relative path to each of the rawdata files
+path_rawdata <- here(rawdata_folder_name, dataHolder_source) # the relative path to the rawdata files
+
+# beauty adjustment
+dataHolder_source <- gsub("\\.", "Not specified", dataHolder_source)
+
+```
+
+
+```{r extracting_info, warning=FALSE, include=FALSE}
+
+list_of_all_files <- NULL
+
+
+for (i in seq_along(datalist)) { 
+
+  
+    temp <- datalist[[i]]
+  
+  vari_type <- sapply(temp, class)
+  vari_name <- names(temp)
+  vari_def <- names(temp) #temporarily solution 
+  
+  minimum <- sapply(temp, function(x) ifelse(is.numeric(x), min(x, na.rm = TRUE), ""))
+  maximum <- sapply(temp, function(x) ifelse(is.numeric(x), max(x, na.rm = TRUE), ""))
+  missing <- sapply(temp, function(x) sum(is.na(x)))
+  categories <- sapply(temp, function(x) ifelse(is.character(x), length(unique(x)), ""))
+
+    file_info <- cbind(
+             dataHolder_source = c(dataHolder_source[i], rep("", ncol(temp)-1)),
+             path_rawdata = c(path_rawdata[i], rep("", ncol(temp)-1)),
+             name_rawdata = c(name_rawdata[i], rep("", ncol(temp)-1)),
+             nr_rows = c(dim(temp)[1], rep("", ncol(temp)-1)),
+             nr_cols = c(dim(temp)[2], rep("", ncol(temp)-1)),
+             vari_name, 
+             vari_def,
+             vari_type,
+             minimum,
+             maximum,
+             missing,
+             categories,
+             comments = rep("", ncol(temp))
+             )
+    
+    list_of_all_files <- rbind(list_of_all_files, file_info)
+} 
+
+```
+
+
+
+```{r creating table, echo=FALSE}
+options(knitr.kable.NA = '') #Missing values (NA) in the table are displayed as NA by default. If you want to display them with other characters, you can set the option knitr.kable.NA, e.g. options(knitr.kable.NA = '') to hide NA values.
+
+# removing "Path to the raw data" and "comments"" columns
+list_of_all_files <- list_of_all_files[, -c(2, ncol(list_of_all_files))]
+# adding column names
+colnames(list_of_all_files) <- colnames[-c(2, length(colnames))]
+# Adding an asterix to "Data holder/source" header
+colnames(list_of_all_files)[1] <- paste0(colnames(list_of_all_files)[1],  
+                                         footnote_marker_symbol(1))
+
+list_of_all_files %>% 
+  kable(row.names = FALSE,
+        escape = F) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), 
+                full_width = F, 
+                position = "left",
+              font_size = 10
+              ) %>%
+  #column_spec(2, width = "5cm",  bold = TRUE) %>% # was trying to contoll the width of "Path to the raw data" column. Now the column is removed and the paths are added as footnote to the table
+  #collapse_rows(columns = 1:4, valign = "top") %>% # collapsing #Data holder/source" and "File" columns
+  #scroll_box(width = "100%", height = "300px") %>% # does not work nicely with footnote
+  footnote(general = "The path(s) to the raw data files.", 
+           general_title = "General: ",
+           number = paste0(unique(dataHolder_source), ": ", unique(path_rawdata)),
+           footnote_as_chunk = F)
+
+```
+
+
